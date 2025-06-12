@@ -7,26 +7,44 @@ from io import BytesIO
 import glob, os, re
 from langchain.chat_models import ChatOpenAI
 from langchain_experimental.agents import create_pandas_dataframe_agent
+from datetime import datetime
 
 # ─── 1) Page config ────────────────────────────────────────────────────────────
 st.set_page_config(page_title="Vettoo Commencements", layout="wide")
 st.title("Vettoo")
-st.subheader("VET Commencement Insights")
+
 
 # ─── 2) Load latest Commencements file ──────────────────────────────────────────
-DATA_DIR = r"C:\1 SASC\Startup Platform\Data"
-files = sorted(glob.glob(os.path.join(DATA_DIR, "*Commencements*.xls*")))
+DATA_DIR = "data"
+files = sorted([
+    f for f in glob.glob(os.path.join(DATA_DIR, "*_Data.xlsx"))
+    if not os.path.basename(f).startswith("~$")
+])
 if not files:
-    st.error("No Commencements file found.")
+    st.error("No *_Data.xlsx file found in the folder.")
     st.stop()
 
+latest_file = files[-1]
+sheet_names = ["Commencements", "Completions", "In-training", "Recommencements", "Cancellations"]
+
+# Sidebar dropdown to select a sheet
+st.sidebar.header("Select Training Contract Status")
+selected_sheet = st.sidebar.selectbox("Choose a status", sheet_names)
+
+st.subheader(f"📈 {selected_sheet} Changes Summary")
+
+# ✅ Move this line here:
+st.caption(f"Using data from: **{os.path.basename(latest_file)}**, sheet: **{selected_sheet}**")
+
 @st.cache_data
-def load_df(path):
-    df = pd.read_excel(path, engine="openpyxl")
+def load_df(path, sheet):
+    df = pd.read_excel(path, sheet_name=sheet, engine="openpyxl")
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
-df = load_df(files[-1])
+df = load_df(latest_file, selected_sheet)
+
+
 year_cols = sorted(
     [c for c in df.columns if re.fullmatch(r"\d{4}", str(c))],
     key=lambda x: int(x)
@@ -59,19 +77,34 @@ all_quals = sorted(df["Latest Qualification"].dropna().unique())
 selected = st.sidebar.multiselect(
     "Qualifications to compare", 
     options=all_quals, 
-    default=[all_quals[0]]
+    default=[],  # No default selection
+    help="Choose one or more qualifications to view data"
 )
+
 if not selected:
-    st.error("Please choose at least one qualification.")
+    st.markdown(
+        """
+        ### 👋 Welcome to **Vettoo**
+        ---
+        Please select a **Training Contract Status** and one or more **Qualifications** from the sidebar to view detailed visualisations and trends.
+
+        💡 Tip: You can compare multiple qualifications or explore one at a time.
+        """
+    )
     st.stop()
+
 
 # pull out only those rows
 sel_df = df[df["Latest Qualification"].isin(selected)]
 
-# ─── 4) Combined chart: Qualifications vs Market, Trade & Vocation Benchmarks ──
-st.header("📊 Annual Commencements vs Benchmarks")
 
-# melt your selected qualifications into long form
+# ─── 4) Combined chart: Qualifications vs Benchmarks w/ toggle ────────────────
+show_bench = st.sidebar.checkbox("Show Benchmarks", value=True)
+
+import plotly.graph_objects as go
+from plotly.colors import qualitative
+
+# prepare your long-form data
 qual_long = (
     sel_df
     .melt(id_vars=["Latest Qualification"], value_vars=year_cols,
@@ -79,92 +112,90 @@ qual_long = (
 )
 qual_long["Year"] = qual_long["Year"].astype(int)
 
-# grab the 2015 base for each qual
+# base values per qualification
 bases = sel_df.set_index("Latest Qualification")["2015"].to_dict()
 
-# define your three ratio series (unchanged)
-all_ratios = {2015:1, 2016:0.929862395, 2017:0.888478127, 2018:0.814746354,
-              2019:0.926370918, 2020:1.135448757, 2021:1.550934483, 2022:1.676422263,
-              2023:0.975354282, 2024:0.931648214}
-trade_ratios = {2015:1, 2016:0.931882419, 2017:1.004239683, 2018:0.986715659,
-                2019:0.959581685, 2020:1.085641605, 2021:1.366026003, 2022:1.410684002,
-                2023:1.273318259, 2024:1.199286925}
-voc_ratios = {2015:1, 2016:0.927879961, 2017:0.822200710, 2018:0.716844143,
-              2019:0.907712165, 2020:1.164246531, 2021:1.656824782, 2022:1.828654405,
-              2023:0.805582446, 2024:0.779172825}
+# ratio dictionaries (as before) …
+benchmark_years = list(range(2015, 2025))
+all_ratios = {2015:1,2016:0.929862395,2017:0.888478127,2018:0.814746354,
+              2019:0.926370918,2020:1.135448757,2021:1.550934483,2022:1.676422263,
+              2023:0.975354282,2024:0.931648214}
+trade_ratios= {2015:1,2016:0.931882419,2017:1.004239683,2018:0.986715659,
+               2019:0.959581685,2020:1.085641605,2021:1.366026003,2022:1.410684002,
+               2023:1.273318259,2024:1.199286925}
+voc_ratios  = {2015:1,2016:0.927879961,2017:0.822200710,2018:0.716844143,
+               2019:0.907712165,2020:1.164246531,2021:1.656824782,2022:1.828654405,
+               2023:0.805582446,2024:0.779172825}
 
-# build benchmark DataFrames once
-bench_all = pd.DataFrame({
-    "Year": list(all_ratios),
-    "Market Benchmark": [all_ratios[y] for y in all_ratios]
-})
-bench_trade = pd.DataFrame({
-    "Year": list(trade_ratios),
-    "Trade Benchmark": [trade_ratios[y] for y in trade_ratios]
-})
-bench_voc   = pd.DataFrame({
-    "Year": list(voc_ratios),
-    "Vocation Benchmark": [voc_ratios[y] for y in voc_ratios]
-})
+# bench DataFrames
+bench_all = pd.DataFrame({"Year": benchmark_years,
+                          "Benchmark": [all_ratios[y] for y in benchmark_years]})
+bench_trade = pd.DataFrame({"Year": benchmark_years,
+                            "Benchmark": [trade_ratios[y] for y in benchmark_years]})
+bench_voc   = pd.DataFrame({"Year": benchmark_years,
+                            "Benchmark": [voc_ratios[y] for y in benchmark_years]})
 
 fig = go.Figure()
+palette = qualitative.Plotly
 
-# qualification lines
-for qual in selected:
-    sub = qual_long[qual_long["Latest Qualification"]==qual]
+# plot each qualification
+for i, qual in enumerate(selected):
+    color = palette[i % len(palette)]
+    dfq = qual_long[qual_long["Latest Qualification"] == qual]
+    base = bases.get(qual, 1)
+
+    # qualification line
     fig.add_trace(go.Scatter(
-        x=sub["Year"], y=sub["Commencements"],
+        x=dfq["Year"], y=dfq["Commencements"],
         mode="lines+markers", name=qual,
-        line=dict(width=3)
+        line=dict(color=color, width=3),
+        marker=dict(color=color)
     ))
 
-# benchmark lines (scale each by the FIRST selected qual's base2015)
-base = bases[selected[0]]
-fig.add_trace(go.Scatter(
-    x=bench_all["Year"],
-    y=bench_all["Market Benchmark"]*base,
-    mode="lines+markers", name="Market Benchmark",
-    line=dict(color="gray", dash="dashdot"),
-    marker=dict(symbol="circle-open")
-))
-fig.add_trace(go.Scatter(
-    x=bench_trade["Year"],
-    y=bench_trade["Trade Benchmark"]*base,
-    mode="lines+markers", name="Trade Benchmark",
-    line=dict(color="green", dash="dash"),
-    marker=dict(symbol="square-open")
-))
-fig.add_trace(go.Scatter(
-    x=bench_voc["Year"],
-    y=bench_voc["Vocation Benchmark"]*base,
-    mode="lines+markers", name="Vocation Benchmark",
-    line=dict(color="orange", dash="dot"),
-    marker=dict(symbol="diamond-open")
-))
+    if show_bench and selected_sheet != "Recommencements":
+        # market
+        fig.add_trace(go.Scatter(
+            x=bench_all["Year"],
+            y=bench_all["Benchmark"] * base,
+            mode="lines", name=f"{qual} Market Bench",
+            line=dict(color=color, dash="dashdot"),
+            showlegend=True
+        ))
+        # trade
+        fig.add_trace(go.Scatter(
+            x=bench_trade["Year"],
+            y=bench_trade["Benchmark"] * base,
+            mode="lines", name=f"{qual} Trade Bench",
+            line=dict(color=color, dash="dash"),
+            showlegend=True
+        ))
+        # vocation
+        fig.add_trace(go.Scatter(
+            x=bench_voc["Year"],
+            y=bench_voc["Benchmark"] * base,
+            mode="lines", name=f"{qual} Voc Bench",
+            line=dict(color=color, dash="dot"),
+            showlegend=True
+        ))
 
-# ─── COVID-19 shading ─────────────────────────────────────────────────────────
-fig.add_vrect(
-    x0=2020, x1=2022,
-    fillcolor="lightgrey", opacity=0.3, layer="below", line_width=0,
-    annotation_text="COVID-19 pandemic", annotation_position="top left",
-    annotation_font_size=12, annotation_font_color="grey"
-)
+# shade COVID period if benchmarks are shown
+if show_bench:
+    fig.add_vrect(
+        x0=2020, x1=2022,
+        fillcolor="lightgrey", opacity=0.3, layer="below", line_width=0,
+        annotation_text="COVID-19 pandemic", annotation_position="top left",
+        annotation_font_size=12, annotation_font_color="grey"
+    )
 
-# now finalize layout
 fig.update_layout(
-    title="Annual Commencements vs Market, Trade & Vocation Benchmarks",
-    xaxis_title="Year", yaxis_title="Commencements",
+    title=f"Annual {selected_sheet} vs Benchmarks" if show_bench else f"Annual {selected_sheet}",
+    xaxis_title="Year",
+    yaxis_title=selected_sheet,
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
     margin=dict(t=60, l=20, r=20, b=20),
 )
 st.plotly_chart(fig, use_container_width=True)
 
-# if more than one qual is selected, remind folks what the benchmarks are scaled to
-if len(selected) > 1:
-    st.info(
-        f"🔎 Benchmarks (Market, Trade & Vocation) are all normalized to the 2015 commencements of "
-        f"**{selected[0]}**, the first qualification you selected."
-    )
 
 # ─── 4b) Key metrics per qualification ─────────────────────────────────────────
 # instead of showing only the first selected, build a small table:
@@ -193,20 +224,27 @@ st.table(
     })
 )
 
-# ─── 4c) Download all selected records in one sheet ─────────────────────────
-def to_excel_all(df_slice: pd.DataFrame) -> BytesIO:
+# ─── 4c) Download all selected records in one sheet with source column ───────
+def to_excel_all_with_sheetname(df_slice: pd.DataFrame, sheet_name: str) -> BytesIO:
+    df_copy = df_slice.copy()
+    df_copy.insert(0, "Data Source", sheet_name)  # Add new first column with sheet name
     buf = BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        # write entire filtered DataFrame to a single sheet
-        df_slice.to_excel(writer, sheet_name="All Qualifications", index=False)
+        df_copy.to_excel(writer, sheet_name="All Qualifications", index=False)
     buf.seek(0)
     return buf
+
+
+timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+
 st.download_button(
     "📥 Download selected records (one sheet)",
-    to_excel_all(sel_df),
-    "selected_qualifications_commencements.xlsx",
+    to_excel_all_with_sheetname(sel_df, selected_sheet),
+    f"vettoo_{selected_sheet.lower()}_{timestamp}.xlsx",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
+
 
 # ─── 5) AI-Powered Chatbot via DataFrame Agent ─────────────────────────────────
 st.markdown("---")
