@@ -200,8 +200,14 @@ fig.update_layout(
     title=f"Annual {selected_sheet} vs Benchmarks" if show_bench else f"Annual {selected_sheet}",
     xaxis_title="Year",
     yaxis_title=selected_sheet,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-    margin=dict(t=60, l=20, r=20, b=20),
+    legend=dict(
+        orientation="v",    # vertical
+        yanchor="middle",   # anchor vertically at the middle
+        y=0.5,              # center at 50% of the plot height
+        xanchor="left",     # anchor horizontally at the left of the legend box
+        x=1.02              # just beyond the right edge
+    ),
+    margin=dict(t=60, l=20, r=200, b=20)  # give extra right margin so legend doesn’t overlap
 )
 st.plotly_chart(fig, use_container_width=True)
 
