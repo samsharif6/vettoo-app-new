@@ -106,7 +106,7 @@ show_bench = st.sidebar.checkbox("Show Benchmarks", value=True)
 
 from plotly.colors import qualitative
 
-# prepare your long-form data
+# melt your selected qualifications into long form
 qual_long = (
     sel_df
     .melt(id_vars=["Latest Qualification"], value_vars=year_cols,
@@ -114,10 +114,10 @@ qual_long = (
 )
 qual_long["Year"] = qual_long["Year"].astype(int)
 
-# base values per qualification (2015 reading, whatever sheet you’re on)
+# 2015 base for each qualification
 bases = sel_df.set_index("Latest Qualification")["2015"].to_dict()
 
-# your pre-defined ratio lookup for each sheet
+# all four sheets’ ratio–lookup
 benchmark_data = {
     "Commencements": {
         "All":      [1.000,0.929862395,0.888478127,0.814746354,0.926370918,1.135448757,1.550934483,1.676422263,0.975354282,0.931648214],
@@ -141,7 +141,7 @@ benchmark_data = {
     },
 }
 
-# build the bench DataFrames from the right sheet’s ratios
+# pull out the proper ratio lists
 ratios = benchmark_data[selected_sheet]
 years = list(range(2015, 2025))
 bench_all   = pd.DataFrame({"Year": years, "Benchmark": ratios["All"]})
@@ -156,43 +156,43 @@ for i, qual in enumerate(selected):
     dfq = qual_long[qual_long["Latest Qualification"] == qual]
     base = bases.get(qual, 1)
 
-    # qualification line
+    # 1) qualification line
     fig.add_trace(go.Scatter(
         x=dfq["Year"], y=dfq["Value"],
         mode="lines+markers", name=qual,
         line=dict(color=color, width=3),
-        marker=dict(color=color)
+        marker=dict(color=color),
+        legendgroup=qual
     ))
 
-    if show_bench and selected_sheet in benchmark_data:
-        # Market bench
+    # 2) benchmarks — only for the very first qualification
+    if show_bench and i == 0:
         fig.add_trace(go.Scatter(
             x=bench_all["Year"],
             y=bench_all["Benchmark"] * base,
-            mode="lines", name=f"{qual} Market Bench",
-            line=dict(color=color, dash="dashdot"),
+            mode="lines", name="Market Bench",
+            line=dict(color="gray", dash="dashdot"),
         ))
-        # Trade bench
         fig.add_trace(go.Scatter(
             x=bench_trade["Year"],
             y=bench_trade["Benchmark"] * base,
-            mode="lines", name=f"{qual} Trade Bench",
-            line=dict(color=color, dash="dash"),
+            mode="lines", name="Trade Bench",
+            line=dict(color="green", dash="dash"),
         ))
-        # Vocation bench
         fig.add_trace(go.Scatter(
             x=bench_voc["Year"],
             y=bench_voc["Benchmark"] * base,
-            mode="lines", name=f"{qual} Voc Bench",
-            line=dict(color=color, dash="dot"),
+            mode="lines", name="Voc Bench",
+            line=dict(color="orange", dash="dot"),
         ))
 
-# COVID shading
+# 3) COVID shading
 if show_bench:
     fig.add_vrect(
         x0=2020, x1=2022,
         fillcolor="lightgrey", opacity=0.3, layer="below", line_width=0,
-        annotation_text="COVID-19 pandemic", annotation_position="top left",
+        annotation_text="COVID-19 pandemic",
+        annotation_position="top left",
         annotation_font_color="grey"
     )
 
