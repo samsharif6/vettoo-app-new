@@ -106,23 +106,27 @@ show_bench = st.sidebar.checkbox("Show Benchmarks", value=True)
 
 from plotly.colors import qualitative
 
-# melt your selected qualifications into long form
+# 4a) melt into long‐form
 qual_long = (
     sel_df
-    .melt(id_vars=["Latest Qualification"], value_vars=year_cols,
-          var_name="Year", value_name="Value")
+    .melt(
+        id_vars=["Latest Qualification"],
+        value_vars=year_cols,
+        var_name="Year",
+        value_name="Value"
+    )
 )
 qual_long["Year"] = qual_long["Year"].astype(int)
 
-# 2015 base for each qualification
+# 4b) base‐2015 values per qualification
 bases = sel_df.set_index("Latest Qualification")["2015"].to_dict()
 
-# all four sheets’ ratio–lookup
-benchmark_data = {
+# 4c) define all ratio dictionaries
+ratios = {
     "Commencements": {
-        "All":      [1.000,0.929862395,0.888478127,0.814746354,0.926370918,1.135448757,1.550934483,1.676422263,0.975354282,0.931648214],
-        "Trade":    [1.000,0.931882419,1.004239683,0.986715659,0.959581685,1.085641605,1.366026003,1.410684002,1.273318259,1.199286925],
-        "Vocation": [1.000,0.927879961,0.822200710,0.716844143,0.907712165,1.164246531,1.656824782,1.828654405,0.805582446,0.779172825],
+        "All":      [1.000000,0.929862,0.888478,0.814746,0.926371,1.135449,1.550934,1.676422,0.975354,0.931648],
+        "Trade":    [1.000000,0.931882,1.004240,0.986716,0.959582,1.085642,1.366026,1.410684,1.273318,1.199287],
+        "Vocation": [1.000000,0.927880,0.822201,0.716844,0.907712,1.164247,1.656825,1.828654,0.805582,0.779173],
     },
     "Completions": {
         "All":      [1.000,0.803,0.741,0.616,0.606,0.550,0.763,0.809,0.914,0.761],
@@ -141,75 +145,84 @@ benchmark_data = {
     },
 }
 
-# pull out the proper ratio lists
-ratios = benchmark_data[selected_sheet]
-years = list(range(2015, 2025))
-bench_all   = pd.DataFrame({"Year": years, "Benchmark": ratios["All"]})
-bench_trade = pd.DataFrame({"Year": years, "Benchmark": ratios["Trade"]})
-bench_voc   = pd.DataFrame({"Year": years, "Benchmark": ratios["Vocation"]})
+bench_years = list(range(2015, 2025))
+sheet_ratios = ratios[selected_sheet]
 
+# build bench DataFrames once
+bench_all   = pd.DataFrame(dict(Year=bench_years, Ratio=sheet_ratios["All"]))
+bench_trade = pd.DataFrame(dict(Year=bench_years, Ratio=sheet_ratios["Trade"]))
+bench_voc   = pd.DataFrame(dict(Year=bench_years, Ratio=sheet_ratios["Vocation"]))
+
+# 4d) build figure
 fig = go.Figure()
 palette = qualitative.Plotly
 
-for i, qual in enumerate(selected):
-    color = palette[i % len(palette)]
-    dfq = qual_long[qual_long["Latest Qualification"] == qual]
-    base = bases.get(qual, 1)
+for idx, qual in enumerate(selected):
+    color = palette[idx % len(palette)]
+    dfq   = qual_long[qual_long["Latest Qualification"] == qual]
+    base  = bases.get(qual, 1)
 
-    # 1) qualification line
+    # qualification line
     fig.add_trace(go.Scatter(
-        x=dfq["Year"], y=dfq["Value"],
-        mode="lines+markers", name=qual,
+        x=dfq["Year"],
+        y=dfq["Value"],
+        mode="lines+markers",
+        name=qual,
         line=dict(color=color, width=3),
-        marker=dict(color=color),
-        legendgroup=qual
+        marker=dict(color=color)
     ))
 
-    # 2) benchmarks — only for the very first qualification
-    if show_bench and i == 0:
+    # benchmarks for each qual
+    if show_bench:
         fig.add_trace(go.Scatter(
             x=bench_all["Year"],
-            y=bench_all["Benchmark"] * base,
-            mode="lines", name="Market Bench",
-            line=dict(color="gray", dash="dashdot"),
+            y=bench_all["Ratio"] * base,
+            mode="lines",
+            name=f"{qual} Market Bench",
+            line=dict(color=color, dash="dashdot"),
         ))
         fig.add_trace(go.Scatter(
             x=bench_trade["Year"],
-            y=bench_trade["Benchmark"] * base,
-            mode="lines", name="Trade Bench",
-            line=dict(color="green", dash="dash"),
+            y=bench_trade["Ratio"] * base,
+            mode="lines",
+            name=f"{qual} Trade Bench",
+            line=dict(color=color, dash="dash"),
         ))
         fig.add_trace(go.Scatter(
             x=bench_voc["Year"],
-            y=bench_voc["Benchmark"] * base,
-            mode="lines", name="Voc Bench",
-            line=dict(color="orange", dash="dot"),
+            y=bench_voc["Ratio"] * base,
+            mode="lines",
+            name=f"{qual} Voc Bench",
+            line=dict(color=color, dash="dot"),
         ))
 
-# 3) COVID shading
+# 4e) shade COVID
 if show_bench:
     fig.add_vrect(
         x0=2020, x1=2022,
-        fillcolor="lightgrey", opacity=0.3, layer="below", line_width=0,
+        fillcolor="lightgrey", opacity=0.3,
+        layer="below", line_width=0,
         annotation_text="COVID-19 pandemic",
         annotation_position="top left",
+        annotation_font_size=12,
         annotation_font_color="grey"
     )
 
+# 4f) layout with vertical legend on right
 fig.update_layout(
     title=f"Annual {selected_sheet} vs Benchmarks" if show_bench else f"Annual {selected_sheet}",
     xaxis_title="Year",
     yaxis_title=selected_sheet,
     legend=dict(
-        orientation="v",    # vertical
-        yanchor="middle",   # anchor vertically at the middle
-        y=0.5,              # center at 50% of the plot height
-        xanchor="left",     # anchor horizontally at the left of the legend box
-        x=1.02              # just beyond the right edge
+        orientation="v",
+        x=1.02, xanchor="left",
+        y=0.5,  yanchor="middle"
     ),
-    margin=dict(t=60, l=20, r=200, b=20)  # give extra right margin so legend doesn’t overlap
+    margin=dict(t=60, l=20, r=200, b=20),
 )
+
 st.plotly_chart(fig, use_container_width=True)
+
 
 
 # ─── 4b) Key metrics per qualification ─────────────────────────────────────────
