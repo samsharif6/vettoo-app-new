@@ -56,11 +56,14 @@ if not year_cols:
 # ─── 3a) Build a cached Agent that will generate & run pandas code locally ──────
 @st.cache_resource(show_spinner=False)
 def get_agent(df):
+
     llm = ChatOpenAI(
-        openai_api_key="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",
+        openai_api_key=os.getenv("OPENAI_API_KEY"),
         temperature=0,
         model="gpt-3.5-turbo"
     )
+
+
     return create_pandas_dataframe_agent(
         llm,
         df,
