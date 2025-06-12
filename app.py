@@ -34,7 +34,7 @@ selected_sheet = st.sidebar.selectbox("Choose a status", sheet_names)
 st.subheader(f"📈 {selected_sheet} Changes Summary")
 
 # ✅ Move this line here:
-st.caption(f"Using data from: **{os.path.basename(latest_file)}**, sheet: **{selected_sheet}**")
+# st.caption(f"Using data from: **{os.path.basename(latest_file)}**, sheet: **{selected_sheet}**")
 
 @st.cache_data
 def load_df(path, sheet):
@@ -104,44 +104,53 @@ sel_df = df[df["Latest Qualification"].isin(selected)]
 # ─── 4) Combined chart: Qualifications vs Benchmarks w/ toggle ────────────────
 show_bench = st.sidebar.checkbox("Show Benchmarks", value=True)
 
-import plotly.graph_objects as go
 from plotly.colors import qualitative
 
 # prepare your long-form data
 qual_long = (
     sel_df
     .melt(id_vars=["Latest Qualification"], value_vars=year_cols,
-          var_name="Year", value_name="Commencements")
+          var_name="Year", value_name="Value")
 )
 qual_long["Year"] = qual_long["Year"].astype(int)
 
-# base values per qualification
+# base values per qualification (2015 reading, whatever sheet you’re on)
 bases = sel_df.set_index("Latest Qualification")["2015"].to_dict()
 
-# ratio dictionaries (as before) …
-benchmark_years = list(range(2015, 2025))
-all_ratios = {2015:1,2016:0.929862395,2017:0.888478127,2018:0.814746354,
-              2019:0.926370918,2020:1.135448757,2021:1.550934483,2022:1.676422263,
-              2023:0.975354282,2024:0.931648214}
-trade_ratios= {2015:1,2016:0.931882419,2017:1.004239683,2018:0.986715659,
-               2019:0.959581685,2020:1.085641605,2021:1.366026003,2022:1.410684002,
-               2023:1.273318259,2024:1.199286925}
-voc_ratios  = {2015:1,2016:0.927879961,2017:0.822200710,2018:0.716844143,
-               2019:0.907712165,2020:1.164246531,2021:1.656824782,2022:1.828654405,
-               2023:0.805582446,2024:0.779172825}
+# your pre-defined ratio lookup for each sheet
+benchmark_data = {
+    "Commencements": {
+        "All":      [1.000,0.929862395,0.888478127,0.814746354,0.926370918,1.135448757,1.550934483,1.676422263,0.975354282,0.931648214],
+        "Trade":    [1.000,0.931882419,1.004239683,0.986715659,0.959581685,1.085641605,1.366026003,1.410684002,1.273318259,1.199286925],
+        "Vocation": [1.000,0.927879961,0.822200710,0.716844143,0.907712165,1.164246531,1.656824782,1.828654405,0.805582446,0.779172825],
+    },
+    "Completions": {
+        "All":      [1.000,0.803,0.741,0.616,0.606,0.550,0.763,0.809,0.914,0.761],
+        "Trade":    [1.000,0.960,0.895,0.809,0.789,0.757,1.018,0.978,0.882,1.067],
+        "Vocation": [1.000,0.742,0.686,0.540,0.538,0.466,0.673,0.764,0.979,0.637],
+    },
+    "In-training": {
+        "All":      [1.000,0.912,0.890,0.900,0.972,1.191,1.436,1.621,1.398,1.298],
+        "Trade":    [1.000,0.958,1.004,1.048,1.087,1.209,1.310,1.424,1.526,1.559],
+        "Vocation": [1.000,0.873,0.772,0.742,0.870,1.223,1.657,1.948,1.288,1.021],
+    },
+    "Cancellations": {
+        "All":      [1.000,0.850,0.798,0.719,0.743,0.736,1.133,1.464,1.249,0.970],
+        "Trade":    [1.000,0.936,0.969,1.107,1.099,0.962,1.427,1.525,1.500,1.477],
+        "Vocation": [1.000,0.822,0.745,0.533,0.575,0.636,1.012,1.483,1.153,0.708],
+    },
+}
 
-# bench DataFrames
-bench_all = pd.DataFrame({"Year": benchmark_years,
-                          "Benchmark": [all_ratios[y] for y in benchmark_years]})
-bench_trade = pd.DataFrame({"Year": benchmark_years,
-                            "Benchmark": [trade_ratios[y] for y in benchmark_years]})
-bench_voc   = pd.DataFrame({"Year": benchmark_years,
-                            "Benchmark": [voc_ratios[y] for y in benchmark_years]})
+# build the bench DataFrames from the right sheet’s ratios
+ratios = benchmark_data[selected_sheet]
+years = list(range(2015, 2025))
+bench_all   = pd.DataFrame({"Year": years, "Benchmark": ratios["All"]})
+bench_trade = pd.DataFrame({"Year": years, "Benchmark": ratios["Trade"]})
+bench_voc   = pd.DataFrame({"Year": years, "Benchmark": ratios["Vocation"]})
 
 fig = go.Figure()
 palette = qualitative.Plotly
 
-# plot each qualification
 for i, qual in enumerate(selected):
     color = palette[i % len(palette)]
     dfq = qual_long[qual_long["Latest Qualification"] == qual]
@@ -149,45 +158,42 @@ for i, qual in enumerate(selected):
 
     # qualification line
     fig.add_trace(go.Scatter(
-        x=dfq["Year"], y=dfq["Commencements"],
+        x=dfq["Year"], y=dfq["Value"],
         mode="lines+markers", name=qual,
         line=dict(color=color, width=3),
         marker=dict(color=color)
     ))
 
-    if show_bench and selected_sheet != "Recommencements":
-        # market
+    if show_bench and selected_sheet in benchmark_data:
+        # Market bench
         fig.add_trace(go.Scatter(
             x=bench_all["Year"],
             y=bench_all["Benchmark"] * base,
             mode="lines", name=f"{qual} Market Bench",
             line=dict(color=color, dash="dashdot"),
-            showlegend=True
         ))
-        # trade
+        # Trade bench
         fig.add_trace(go.Scatter(
             x=bench_trade["Year"],
             y=bench_trade["Benchmark"] * base,
             mode="lines", name=f"{qual} Trade Bench",
             line=dict(color=color, dash="dash"),
-            showlegend=True
         ))
-        # vocation
+        # Vocation bench
         fig.add_trace(go.Scatter(
             x=bench_voc["Year"],
             y=bench_voc["Benchmark"] * base,
             mode="lines", name=f"{qual} Voc Bench",
             line=dict(color=color, dash="dot"),
-            showlegend=True
         ))
 
-# shade COVID period if benchmarks are shown
+# COVID shading
 if show_bench:
     fig.add_vrect(
         x0=2020, x1=2022,
         fillcolor="lightgrey", opacity=0.3, layer="below", line_width=0,
         annotation_text="COVID-19 pandemic", annotation_position="top left",
-        annotation_font_size=12, annotation_font_color="grey"
+        annotation_font_color="grey"
     )
 
 fig.update_layout(
